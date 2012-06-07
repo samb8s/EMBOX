@@ -14,6 +14,5 @@ update.o:update.c update.h grid.h particles.h
 embox:embox.o update.o initialise.o embox_funcs.o
 	gcc embox.o initialise.o embox_funcs.o update.o  -g -lm -o embox
 
-
 clean:
 	-rm embox  *.o
