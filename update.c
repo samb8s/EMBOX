@@ -6,6 +6,7 @@
 #include"grid.h"
 #include"particles.h"
 #include"update.h"
+#include"interpolate.h"
 
 void update_field_current(struct particles *charges,
                           struct grid ***fields,
@@ -133,15 +134,8 @@ double trilin_interp_E(struct grid ***fields,
                      double ypos,
                      double zpos){
 
-    double c00, c10, c01, c11;
-    double c0, c1, c;
-    // Using convention from wikipedia
-    // http://en.wikipedia.org/wiki/Trilinear_interpolation
-    // (don't pretend you would have looked it up anywhere else!)
-    double xd, yd, zd;
     int x0, y0, z0;
     int x1, y1, z1;
-    double sum;
 
     x0 = floor(xpos);
     x1 = ceil(xpos);
@@ -164,68 +158,77 @@ double trilin_interp_E(struct grid ***fields,
             }
             else{
                 // on an edge - average in z space
-                sum = fields[x0][y0][z0].E[unit_vec] + fields[x0][y0][z1].E[unit_vec];
-                return sum/2.0;
+                return lin_interp(fields[x0][y0][z0].E[unit_vec], 
+                                  fields[x0][y0][z1].E[unit_vec],
+                                  z0,
+                                  z1,
+                                  zpos
+                        );
             }
         }
         else if (z0 == z1){
             // edge - average in y space
-            sum = fields[x0][y0][z0].E[unit_vec] + fields[x0][y1][z0].E[unit_vec];
-            return sum/2.0;
+            return lin_interp(fields[x0][y0][z0].E[unit_vec],
+                              fields[x0][y1][z0].E[unit_vec],
+                              y0,
+                              y1,
+                              ypos
+                    );
         }
         else{
             // on a plane - average four points
-            sum = fields[x0][y0][z0].E[unit_vec] + fields[x0][y1][z0].E[unit_vec]
-                + fields[x0][y0][z1].E[unit_vec] + fields[x0][y1][z1].E[unit_vec];
-            return sum/4.0;
+            return bilin_interp(fields[x0][y0][z0].E[unit_vec],
+                                fields[x0][y1][z0].E[unit_vec],
+                                fields[x0][y0][z1].E[unit_vec],
+                                fields[x0][y1][z1].E[unit_vec],
+                                ypos-y0,
+                                zpos-z0
+                    );
         }
     }
     else if (y0 == y1){
         if (z0==z1){
             // return x-space average
-            sum = fields[x0][y0][z0].E[unit_vec] + fields[x1][y0][z0].E[unit_vec];
-            return sum/2.0;
+            return lin_interp(fields[x0][y0][z0].E[unit_vec],
+                              fields[x1][y0][z0].E[unit_vec],
+                              x0,
+                              x1,
+                              xpos
+                    );
         }
         else{
             // on a plane - average four points
-            sum = fields[x0][y0][z0].E[unit_vec] + fields[x1][y0][z0].E[unit_vec]
-                + fields[x0][y0][z1].E[unit_vec] + fields[x1][y0][z1].E[unit_vec];
-            return sum/4.0;
+            return bilin_interp(fields[x0][y0][z0].E[unit_vec],
+                                fields[x1][y0][z0].E[unit_vec],
+                                fields[x0][y0][z1].E[unit_vec],
+                                fields[x1][y0][z1].E[unit_vec],
+                                xpos-x0,
+                                zpos-z0
+                    );
         }
     }
     else if (z0 == z1){
-        sum = fields[x0][y0][z0].E[unit_vec] + fields[x1][y0][z0].E[unit_vec]
-                + fields[x0][y1][z0].E[unit_vec] + fields[x1][y1][z0].E[unit_vec];
-        return sum/4.0;
+        return bilin_interp(fields[x0][y0][z0].E[unit_vec],
+                            fields[x1][y0][z0].E[unit_vec],
+                            fields[x0][y1][z0].E[unit_vec],
+                            fields[x1][y1][z0].E[unit_vec],
+                            xpos-x0,
+                            ypos-y0
+                );
     }
     // Reached here? No matches, do full interpolation
     
-    xd = (xpos - x0)/(x1 - x0);
-    yd = (ypos - y0)/(y1 - y0);
-    zd = (zpos - z0)/(z1 - z0);
-
-    //fprintf(stderr, "x1 %i y1 %i z1 %i x0 %i y0 %i z0 %i\n", x1, y1, z1, x0, y0, z0);
-    // start interpolating in x
-    c00 = fields[x0][y0][z0].E[unit_vec] * (1.0 - xd) +
-                    fields[x1][y0][z0].E[unit_vec] * xd;
-    c10 = fields[x0][y1][z0].E[unit_vec] * (1.0 - xd) +
-                    fields[x1][y1][z0].E[unit_vec] * xd;
-    c01 = fields[x0][y0][z1].E[unit_vec] * (1.0 - xd) +
-                    fields[x1][y0][z1].E[unit_vec] * xd;
-    c11 = fields[x0][y1][z1].E[unit_vec] * (1.0 - xd) +
-                    fields[x1][y1][z1].E[unit_vec] * xd;
-    //fprintf(stderr, "x %i y %i z %i xd %lf yd %lf zd %lf\n", x0, y0, z0, xd, yd, zd);
-
-    // interpolate in y
-    c0 = c00 * (1.0 - yd) + c10 * yd;
-    c1 = c01 * (1.0 - yd) + c11 * yd;
-
-    // interpolate in z
-    c = c0 * (1.0 - zd) + c1 * zd;
-
-    //fprintf(stderr, "c00 %lf\tc01 %lf\tc10 %lf\tc11 %lf\n", c00, c01, c10, c11);
-    //fprintf(stderr, "c: %lf\t%lf\n", c0, c1);
-    return c;
+    return trilin_interp(fields[x0][y0][z0].E[unit_vec],
+                         fields[x0][y0][z1].E[unit_vec],
+                         fields[x0][y1][z0].E[unit_vec],
+                         fields[x0][y1][z1].E[unit_vec],
+                         fields[x1][y0][z0].E[unit_vec],
+                         fields[x1][y0][z1].E[unit_vec],
+                         fields[x1][y1][z0].E[unit_vec],
+                         fields[x1][y1][z1].E[unit_vec],
+                         xpos, ypos, zpos,
+                         x0, y0, z0, x1, y1, z1
+            );
 }
 
 void update_charge_posns(struct particles *charges,
@@ -241,7 +244,7 @@ void update_charge_posns(struct particles *charges,
   
     int i; // loop vars
     int x_pos, y_pos, z_pos;
-    double Ex, Ey, Ez, Bx, By, Bz, Exi; // em fields
+    double Ex, Ey, Ez, Bx, By, Bz; // em fields
     double ax, ay, az; // accelerations
     double x_update, y_update, z_update;
     const double q_to_m=1.75882017e11; 
